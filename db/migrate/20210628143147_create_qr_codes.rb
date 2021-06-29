@@ -5,7 +5,7 @@ class CreateQrCodes < ActiveRecord::Migration[6.1]
       t.string :ln
       t.date :dob
       t.string :testid
-      t.timestamp :timestamp
+      t.datetime :timestamp
       t.string :cwa_test_id
       t.string :cwa_base64_object
 

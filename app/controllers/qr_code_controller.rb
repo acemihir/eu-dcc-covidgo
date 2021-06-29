@@ -8,34 +8,34 @@ class QrCodeController < ApplicationController
   # cwa_test_id also named SHA256-Hash or hash
   # SHA256-Hash: [dob]#[fn]#[ln]#[timestamp]#[testid]#[salt]
   def cwa_test_id qr_code, salt
-    hash_value = "#{qr_code.dob.strftime("%Y-%m-%d")}##{qr_code.fn}##{qr_code.ln}##{qr_code.timestamp}##{qr_code.testid}##{salt}"
+    hash_value = "#{qr_code.dob.strftime("%Y-%m-%d")}##{qr_code.fn}##{qr_code.ln}##{qr_code.timestamp.to_i}##{qr_code.testid}##{salt}"
     Digest::SHA256.hexdigest hash_value
   end
 
-  def build_json
-    # {
-    #   "fn": "Erika",
-    #   "ln": "Mustermann",
-    #   "dob": "1990-12-23",
-    #   "timestamp": 1618386548,
-    #   "testid": "52cddd8e-ff32-4478-af64-cb867cea1db5",
-    #   "salt": "759F8FF3554F0E1BBF6EFF8DE298D9E9",
-    #   "hash": "67a50cba5952bf4f6c7eca896c0030516ab2f228f157237712e52d66489d9960"
-    # }
+  # TODO: refactor this !!
+  def build_json qr_code, salt
+    '{ "fn": "' + qr_code.fn+'", "ln": "' +qr_code.ln+'", "dob": "' +qr_code.dob.strftime("%Y-%m-%d")+'", "timestamp": ' +qr_code.timestamp.to_i.to_s+', "testid": "' +qr_code.testid+'", "salt": "' +salt+'", "hash": "' +qr_code.cwa_test_id+'" }'
   end
 
   def create
     # new qr_code object with given params
     qr_code = QrCode.new(qr_code_params)
+    # take timestamp as utc timestamp or string representation
+    qr_code.timestamp = qr_code_params[:timestamp].is_a?(String) ? Time.parse(qr_code_params[:timestamp]) : Time.at(qr_code_params[:timestamp])
     # generate 128-bit salt
-    salt = SecureRandom.hex(16)
+    salt = "759F8FF3554F0E1BBF6EFF8DE298D9E9" # SecureRandom.hex(16)
     # build the hash (SHA256-Hash)
     cwa_test_id = cwa_test_id qr_code, salt
     qr_code.cwa_test_id = cwa_test_id
+    # build json object (be carefull regarding spaces, see https://github.com/corona-warn-app/cwa-quicktest-onboarding/issues/11)
+    cwa_json = build_json qr_code, salt
     # generate base64 encoded object for building the qr_code
-    # TODO: we probably need a correct sorted json object
-    qr_code.cwa_base64_object = Base64.encode64(qr_code.to_json.merge({salt: salt}))
+    qr_code.cwa_base64_object = Base64.urlsafe_encode64(cwa_json)
+    qr_code.save!
 
-    render json:qr_code.to_json
+    # TODO: we need probably to remove the "==" at the end of string
+    render json:qr_code.as_json.merge(
+      { cwa_link: "https://s.coronawarn.app?v=1##{qr_code.cwa_base64_object}" }
+    )
   end
 end
