@@ -23,7 +23,7 @@ class QrCodeController < ApplicationController
     # take timestamp as utc timestamp or string representation
     qr_code.timestamp = qr_code_params[:timestamp].is_a?(String) ? Time.parse(qr_code_params[:timestamp]) : Time.at(qr_code_params[:timestamp])
     # generate 128-bit salt
-    salt = "759F8FF3554F0E1BBF6EFF8DE298D9E9" # SecureRandom.hex(16)
+    salt = SecureRandom.hex(16) # "759F8FF3554F0E1BBF6EFF8DE298D9E9" # SecureRandom.hex(16)
     # build the hash (SHA256-Hash)
     cwa_test_id = cwa_test_id qr_code, salt
     qr_code.cwa_test_id = cwa_test_id
