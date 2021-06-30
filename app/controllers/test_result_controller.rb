@@ -1,7 +1,28 @@
 class TestResultController < ApplicationController
   def test_result_params
-    params.require([:testid,:result])
-    params.require(:test_result).permit(:testid,:result)
+    logger.info "check test_result params...#{params[:test_result]}"
+    # check & validate params
+    # TODO: do we get timestamp in correct format, or should we transform it to "Unix Epoch Timestamp Format (Sekunden)"
+    params.require([:fn,:ln,:dob,:timestamp,:testid,:result])
+    # params.require(:test_result).permit(:fn,:ln,:dob,:timestamp,:testid,:result) # for mass assignment
+
+    # result must be between 5=pending, 6=negative, 7=positive, 8=test invalid
+    unless params[:result] >= 5 && params[:result] <= 8
+      raise "testresult for the given test must be between: 5=pending, 6=negative, 7=positive, 8=test invalid"
+    end
+    params[:test_result]
+  end
+
+  # cwa_test_id also named SHA256-Hash or hash
+  # SHA256-Hash: [dob]#[fn]#[ln]#[timestamp]#[testid]#[salt]
+  def cwa_test_id test_result
+    hash_value = "#{test_result[:dob]}##{test_result[:fn]}##{test_result[:ln]}##{test_result[:timestamp]}##{test_result[:testid]}##{test_result[:salt]}"
+    Digest::SHA256.hexdigest hash_value
+  end
+
+  # TODO: refactor this !!
+  def build_json test_result
+    '{ "fn": "' + test_result[:fn]+'", "ln": "' +test_result[:ln]+'", "dob": "' +test_result[:dob]+'", "timestamp": ' +test_result[:timestamp].to_s+', "testid": "' +test_result[:testid]+'", "salt": "' +test_result[:salt]+'", "hash": "' +test_result[:cwa_test_id]+'" }'
   end
 
   def CWA_request test_results
@@ -18,43 +39,56 @@ class TestResultController < ApplicationController
         # cert_store: xx
       }
 
-
     cwa_server_response = cwa_server_connection.post("api/v1/quicktest/results") do |request|
       request.headers['Content-Type'] = 'application/json'
       request.body = test_results.to_json
     end
 
     cwa_server_response
-
-    # cwa_result = RestClient::Request.new(
-    #   {
-    #     method: :post,
-    #     payload: test_results.to_json,
-    #     url: "https://quicktest-result-dfe4f5c711db.coronawarn.app/api/v1/quicktest/results",
-    #   }
-    # ).execute do |response, request, result|
-    #     case response.code
-    #     when 204
-    #       render json: JSON.parse(response.to_str, symbolize_names: true)
-    #     when 400
-    #       render status: 400, json: { error: "Client Certificate not accepted!" }
-    #     else
-    #       render status: 400, json: { error: "Invalid response #{response.to_s}" }
-    #     end
-    #   end
   end
 
+  # POST /test_result
   def create
-    # find qr_code / test
-    qr_code = QrCode.find_by testid: test_result_params[:testid]
+    test_result = test_result_params
+    # qr_code.testid = SecureRandom.uuid unless qr_code.testid.present? # with statless service we need testid from extern
+
+    # take timestamp as utc timestamp or string representation
+    logger.info "parse given test-timestamp...#{params}"
+    test_result[:timestamp] = test_result[:timestamp].is_a?(String) ? Time.parse(test_result[:timestamp]).to_i : Time.at(test_result[:timestamp]).to_i
+    logger.info "parse given birthdate..."
+    test_result[:dob] = Date.parse(test_result[:dob]).strftime("%Y-%m-%d")
+
+    # generate 128-bit salt
+    logger.info "create secure salt..."
+    test_result[:salt] = SecureRandom.hex(16) # "759F8FF3554F0E1BBF6EFF8DE298D9E9" # SecureRandom.hex(16)
+    # build the hash (SHA256-Hash)
+    logger.info "create CWA SHA256 hash..."
+    test_result[:cwa_test_id] = cwa_test_id test_result
+    # build json object (be carefull regarding spaces, see https://github.com/corona-warn-app/cwa-quicktest-onboarding/issues/11)
+    logger.info "build cwa json object..."
+    cwa_json = build_json test_result
+    logger.info cwa_json
+    # generate base64 encoded object for building the qr_code
+    logger.info "generate base64 encoded cwa object..."
+    test_result[:cwa_base64_object] = Base64.urlsafe_encode64(cwa_json)
+    logger.info test_result[:cwa_base64_object]
+
+    # TODO: we need probably to remove the "==" at the end of string
+    test_result[:cwa_link] = "https://s.coronawarn.app?v=1##{test_result[:cwa_base64_object]}"
+
+    logger.info "build test_results object for cwa-server..."
     test_results = {
       testResults: [{
-         id: qr_code.cwa_test_id,
-         result: test_result_params[:result]
+         id: test_result[:cwa_test_id],
+         result: test_result[:result]
      }]
     }
+    logger.info test_results
 
+    logger.info "push to cwa server..."
     cwa_server_response = CWA_request test_results
-    render status: cwa_server_response.status, json: {body: cwa_server_response.body}
+    logger.info "response: #{cwa_server_response.body}"
+
+    render status: cwa_server_response.status, json: cwa_server_response.success? ? test_result.to_json : { error: cwa_server_response.body}
   end
 end

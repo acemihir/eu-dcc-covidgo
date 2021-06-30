@@ -10,18 +10,6 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 2021_06_28_143147) do
-
-  create_table "qr_codes", force: :cascade do |t|
-    t.string "fn"
-    t.string "ln"
-    t.date "dob"
-    t.string "testid"
-    t.datetime "timestamp"
-    t.string "cwa_test_id"
-    t.string "cwa_base64_object"
-    t.datetime "created_at", precision: 6, null: false
-    t.datetime "updated_at", precision: 6, null: false
-  end
+ActiveRecord::Schema.define(version: 0) do
 
 end
