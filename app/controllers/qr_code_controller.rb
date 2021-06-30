@@ -2,7 +2,7 @@ class QrCodeController < ApplicationController
   def qr_code_params
     # TODO: do we get timestamp in correct format, or should we transform it to "Unix Epoch Timestamp Format (Sekunden)"
     params.require([:fn,:ln,:dob,:timestamp])
-    params.require(:qr_code).permit(:fn,:ln,:dob,:timestamp, :testid) # for using where hash needed
+    params.require(:qr_code).permit(:fn,:ln,:dob,:timestamp, :testid)
   end
 
   # cwa_test_id also named SHA256-Hash or hash
@@ -20,6 +20,8 @@ class QrCodeController < ApplicationController
   def create
     # new qr_code object with given params
     qr_code = QrCode.new(qr_code_params)
+    # if no testid is given we generate a uuid
+    qr_code.testid = SecureRandom.uuid unless qr_code.testid.present?
     # take timestamp as utc timestamp or string representation
     qr_code.timestamp = qr_code_params[:timestamp].is_a?(String) ? Time.parse(qr_code_params[:timestamp]) : Time.at(qr_code_params[:timestamp])
     # generate 128-bit salt
