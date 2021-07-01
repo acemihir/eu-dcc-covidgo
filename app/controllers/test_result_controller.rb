@@ -28,15 +28,12 @@ class TestResultController < ApplicationController
   def CWA_request test_results
     # production: https://quicktest-result.coronawarn.app
     # testing: https://quicktest-result-dfe4f5c711db.coronawarn.app/
-    cwa_url = Rails.env.production? ? "https://quicktest-result.coronawarn.app/" : "https://quicktest-result-dfe4f5c711db.coronawarn.app/"
-
+    cwa_url = Rails.env.production? ? "https://quicktest-result.coronawarn.app/" : "https://quicktest-result-cff4f7147260.coronawarn.app/" #"https://quicktest-result-dfe4f5c711db.coronawarn.app/"
+    # byebug
     cwa_server_connection = Faraday.new cwa_url,
       ssl: {
-        # client_cert: xx,
-        # client_key: xx ,
-        # ca_file: xx    ,
-        # ca_path: xx    ,
-        # cert_store: xx
+        client_key: OpenSSL::PKey::RSA.new(File.read('config/credentials/covidgo-wru.key'), Rails.application.credentials.cwa[:key_password]),
+        client_cert: OpenSSL::X509::Certificate.new(File.read('config/credentials/covidgo-wru.schnelltestportal.de-Server-17f5abbefa6fb59dfa43f1dc8bc4ddfd.cer'))
       }
 
     cwa_server_response = cwa_server_connection.post("api/v1/quicktest/results") do |request|
