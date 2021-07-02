@@ -28,7 +28,8 @@ class TestResultController < ApplicationController
   def CWA_request test_results
     # production: https://quicktest-result.coronawarn.app
     # testing: https://quicktest-result-dfe4f5c711db.coronawarn.app/
-    cwa_url = Rails.env.production? ? "https://quicktest-result.coronawarn.app/" : "https://quicktest-result-cff4f7147260.coronawarn.app/" #"https://quicktest-result-dfe4f5c711db.coronawarn.app/"
+    cwa_url = Rails.env.production? ? "https://quicktest-result.coronawarn.app/" : "https://quicktest-result-dfe4f5c711db.coronawarn.app/" #"https://quicktest-result-cff4f7147260.coronawarn.app/"
+    logger.info "push to cwa server #{cwa_url}..."
     # byebug
     cwa_server_connection = Faraday.new cwa_url,
       ssl: {
