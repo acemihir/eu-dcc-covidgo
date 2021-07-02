@@ -1,0 +1,91 @@
+{
+	"info": {
+		"_postman_id": "62642b0c-b158-4722-a337-bf5407a410c9",
+		"name": "cwa_integration",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "dev",
+			"item": [
+				{
+					"name": "test result",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "System MrdmX7WH9rQCcxLb80FDoKPZEMAHbukvmrER1/Ht2JE=",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"fn\": \"Erika\",\n    \"ln\": \"Mustermann\",\n    \"dob\": \"1990-12-23\",\n    \"timestamp\": 1618386548,\n    \"testid\": \"52cddd8e-ff32-4478-af64-cb867cea1db6\",\n    \"result\": 8\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:3000/test_result",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "3000",
+							"path": [
+								"test_result"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "health",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "System MrdmX7WH9rQCcxLb80FDoKPZEMAHbukvmrER1/Ht2JE=",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://127.0.0.1:3000/health",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "3000",
+							"path": [
+								"health"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
