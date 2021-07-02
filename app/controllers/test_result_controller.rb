@@ -86,7 +86,11 @@ class TestResultController < ApplicationController
     logger.info "push to cwa server..."
     cwa_server_response = CWA_request test_results
     logger.info "response: #{cwa_server_response.body}"
-
-    render status: cwa_server_response.status, json: cwa_server_response.success? ? test_result.to_json : { error: cwa_server_response.body}
+    byebug
+    if cwa_server_response.success?
+      render json: test_result.to_json
+    else
+      render json: { error: cwa_server_response.body}, status: cwa_server_response.status
+    end
   end
 end
