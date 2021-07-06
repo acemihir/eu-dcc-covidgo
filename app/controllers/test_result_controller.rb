@@ -39,8 +39,8 @@ class TestResultController < ApplicationController
     cwa_url = ENV["CWA_URL"]
     logger.info "push to cwa server #{cwa_url}..."
 
-    client_key = OpenSSL::PKey::RSA.new(File.read('config/credentials/covidgo-wru.key'), ENV["KEY_PASSWORD"])
-    client_cert = OpenSSL::X509::Certificate.new(File.read('config/credentials/covidgo-wru.schnelltestportal.de-Server-17f5abbefa6fb59dfa43f1dc8bc4ddfd.cer'))
+    client_key = OpenSSL::PKey::RSA.new(File.read(ENV["KEY_PATH"]), ENV["KEY_PASSWORD"])
+    client_cert = OpenSSL::X509::Certificate.new(File.read(ENV["CERT_PATH"]))
     cwa_server_connection = Faraday.new cwa_url,
       ssl: {
         client_key: client_key,

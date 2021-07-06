@@ -7,6 +7,9 @@ ruby '3.0.1'
 gem 'faraday'
 # gem 'rest-client'
 
+# ENV variables
+gem "figaro"
+
 # Bundle edge Rails instead: gem 'rails', github: 'rails/rails', branch: 'main'
 gem 'rails', '~> 6.1.4'
 # Use sqlite3 as the database for Active Record

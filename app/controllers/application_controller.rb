@@ -1,8 +1,10 @@
 class ApplicationController < ActionController::API
+  silence_warnings do
+    # for using system Token like Authorization: system <server_token>
+    # overwrite https://github.com/rails/rails/blob/83217025a171593547d1268651b446d3533e2019/actionpack/lib/action_controller/metal/http_authentication.rb#L409
+    ActionController::HttpAuthentication::Token.const_set("TOKEN_REGEX", /^(Token|Bearer|System|token|bearer|system)\s+/)
+  end
   include ActionController::HttpAuthentication::Token::ControllerMethods
-  # for using system Token like Authorization: system <server_token>
-  # overwrite https://github.com/rails/rails/blob/83217025a171593547d1268651b446d3533e2019/actionpack/lib/action_controller/metal/http_authentication.rb#L409
-  ActionController::HttpAuthentication::Token.const_set("TOKEN_REGEX", /^(Token|Bearer|System|token|bearer|system)\s+/)
   before_action :authenticate
 
   # overwrite all exception to be sure we catch it
