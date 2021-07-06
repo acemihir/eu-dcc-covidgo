@@ -10,6 +10,9 @@
 			"item": [
 				{
 					"name": "test result",
+					"protocolProfileBehavior": {
+						"disabledSystemHeaders": {}
+					},
 					"request": {
 						"method": "POST",
 						"header": [
@@ -21,7 +24,7 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n    \"fn\": \"Erika\",\n    \"ln\": \"Mustermann\",\n    \"dob\": \"1990-12-23\",\n    \"timestamp\": 1618386548,\n    \"testid\": \"52cddd8e-ff32-4478-af64-cb867cea1db6\",\n    \"result\": 8\n}",
+							"raw": "{\n    \"fn\": \"Erika\",\n    \"ln\": \"Mustermann\",\n    \"dob\": \"1990-12-23\",\n    \"timestamp\": 1618386548,\n    \"testid\": \"52cddd8e-ff32-4478-af64-cb867cea1db7\",\n    \"result\": 5\n}",
 							"options": {
 								"raw": {
 									"language": "json"
