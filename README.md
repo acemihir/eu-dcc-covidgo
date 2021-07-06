@@ -13,6 +13,10 @@ this environment variables need to be set:
   CERT_PATH: the relative path to the certification-file
   secret_key_base: internal key-base
 ```
+optional:
+```
+RAILS_LOG_TO_STDOUT: if set to true logging is done to console (else to file)
+```
 
 one example could be:
 ```
@@ -24,6 +28,10 @@ one example could be:
   secret_key_base: MrdmX7WH9rQCcxLb80FDoKPZEMAHbukvmrER1/Ht2JE=
 ```
 **Remember to copy the Certificate- and Key-File to the path (KEY_PATH, CERT_PATH).**
+
+### Logging
+ if **RAILS_LOG_TO_STDOUT: true** Logging is done to console output.
+ else **Logfile is placed at /log/production.log** (for production env).
 
 ## Tech-Stack
 * Rails 6.1
@@ -67,8 +75,17 @@ one example could be:
  ```
 
 
-### Authentication
+## Authentication
 set the following header to the request:
 ```
   Authorization:System <SERVER_TOKEN>
+```
+
+## Example
+```
+git clone git@gitlab.com:covidgotech/apit/srv-gw-cwa.git
+cd srv-gw-cwa
+cp <path>/covidgo-wru.* config/credentials
+sudo docker build -t srv-gw-cwa:prod .
+sudo docker run -p 3000:3000 -e RAILS_LOG_TO_STDOUT=true -e SERVER_TOKEN=MrdmX7WH9rQCcxLb80FDoKPZEMAHbukvmrER1/Ht2JE= -e KEY_PASSWORD=pass -e CWA_URL=https://quicktest-result-dfe4f5c711db.coronawarn.app/ -e KEY_PATH=config/credentials/covidgo-wru.key -e CERT_PATH=config/credentials/covidgo-wru.schnelltestportal.de-Server-17f5abbefa6fb59dfa43f1dc8bc4ddfd.cer -e SECRET_KEY_BASE=MrdmX7WH9rQCcxLb80FDoKPZEMAHbukvmrER1/Ht2JE= srv-gw-cwa:prod
 ```
