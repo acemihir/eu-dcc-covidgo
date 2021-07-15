@@ -1,22 +1,49 @@
 class TestResultController < ApplicationController
+  # POST /test_result
+  def create
+    test_result = generate_cwa_link test_result_params
+
+    logger.info "build test_results object for cwa-server..."
+    test_results = {
+      testResults: [{
+         id: test_result[:cwa_test_id],
+         result: test_result[:result]
+     }]
+    }
+    logger.info test_results
+
+    logger.info "push to cwa server..."
+    cwa_server_response = CWA_request test_results
+    logger.info "response: #{cwa_server_response.body}"
+
+    # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
+    render json: test_result.to_json, status: cwa_server_response.success? ? :ok : cwa_server_response.status
+  end
+
+  private
+
   def test_result_params
-    logger.info "check test_result params...#{params[:test_result]}"
+    test_result = params[:test_result]
+    logger.info "check test_result params...#{test_result}"
     # check & validate params
     # TODO: do we get timestamp in correct format, or should we transform it to "Unix Epoch Timestamp Format (Sekunden)"
-    params.require([:fn,:ln,:dob,:timestamp,:testid,:result])
-    # params.require(:test_result).permit(:fn,:ln,:dob,:timestamp,:testid,:result) # for mass assignment
+    params.require([:timestamp,:result])
 
     # result must be between 5=pending, 6=negative, 7=positive, 8=test invalid
     unless params[:result] >= 5 && params[:result] <= 8
       raise ArgumentError.new("testresult for the given test must be between: 5=pending, 6=negative, 7=positive, 8=test invalid")
     end
 
-    test_result = params[:test_result]
+    if (params.has_key?(:fn) && params.has_key?(:ln) && params.has_key?(:dob) && params.has_key?(:testid))
+      test_result[:anonymous] = false
+      logger.info "parse given birthdate..."
+      test_result[:dob] = Date.parse(test_result[:dob]).strftime("%Y-%m-%d")
+    else
+      test_result[:anonymous] = true
+    end
     # take timestamp as utc timestamp or string representation
     logger.info "parse given test-timestamp...#{params}"
     test_result[:timestamp] = test_result[:timestamp].is_a?(String) ? Time.parse(test_result[:timestamp]).to_i : Time.at(test_result[:timestamp]).to_i
-    logger.info "parse given birthdate..."
-    test_result[:dob] = Date.parse(test_result[:dob]).strftime("%Y-%m-%d")
 
     test_result
   end
@@ -24,13 +51,23 @@ class TestResultController < ApplicationController
   # cwa_test_id also named SHA256-Hash or hash
   # SHA256-Hash: [dob]#[fn]#[ln]#[timestamp]#[testid]#[salt]
   def cwa_test_id test_result
-    hash_value = "#{test_result[:dob]}##{test_result[:fn]}##{test_result[:ln]}##{test_result[:timestamp]}##{test_result[:testid]}##{test_result[:salt]}"
+    hash_value =
+      if test_result[:anonymous]
+        "#{test_result[:timestamp]}##{test_result[:salt]}"
+      else
+        "#{test_result[:dob]}##{test_result[:fn]}##{test_result[:ln]}##{test_result[:timestamp]}##{test_result[:testid]}##{test_result[:salt]}"
+      end
+
     Digest::SHA256.hexdigest hash_value
   end
 
   # TODO: refactor this !!
   def build_json test_result
-    '{ "fn": "' + test_result[:fn]+'", "ln": "' +test_result[:ln]+'", "dob": "' +test_result[:dob]+'", "timestamp": ' +test_result[:timestamp].to_s+', "testid": "' +test_result[:testid]+'", "salt": "' +test_result[:salt]+'", "hash": "' +test_result[:cwa_test_id]+'" }'
+    if test_result[:anonymous]
+      '{ "timestamp": ' +test_result[:timestamp].to_s+', "salt": "' +test_result[:salt]+'", "hash": "' +test_result[:cwa_test_id]+'" }'
+    else
+      '{ "fn": "' + test_result[:fn]+'", "ln": "' +test_result[:ln]+'", "dob": "' +test_result[:dob]+'", "timestamp": ' +test_result[:timestamp].to_s+', "testid": "' +test_result[:testid]+'", "salt": "' +test_result[:salt]+'", "hash": "' +test_result[:cwa_test_id]+'" }'
+    end
   end
 
   def CWA_request test_results
@@ -57,13 +94,10 @@ class TestResultController < ApplicationController
     cwa_server_response
   end
 
-  # POST /test_result
-  def create
-    test_result = test_result_params
-    # qr_code.testid = SecureRandom.uuid unless qr_code.testid.present? # with statless service we need testid from extern
+  def generate_cwa_link test_result, salt=SecureRandom.hex(16)
     # generate 128-bit salt
     logger.info "create secure salt..."
-    test_result[:salt] = SecureRandom.hex(16) # "759F8FF3554F0E1BBF6EFF8DE298D9E9" # SecureRandom.hex(16)
+    test_result[:salt] = salt
     # build the hash (SHA256-Hash)
     logger.info "create CWA SHA256 hash..."
     test_result[:cwa_test_id] = cwa_test_id test_result
@@ -79,20 +113,6 @@ class TestResultController < ApplicationController
     # TODO: we need probably to remove the "==" at the end of string
     test_result[:cwa_link] = "https://s.coronawarn.app?v=1##{test_result[:cwa_base64_object]}"
 
-    logger.info "build test_results object for cwa-server..."
-    test_results = {
-      testResults: [{
-         id: test_result[:cwa_test_id],
-         result: test_result[:result]
-     }]
-    }
-    logger.info test_results
-
-    logger.info "push to cwa server..."
-    cwa_server_response = CWA_request test_results
-    logger.info "response: #{cwa_server_response.body}"
-
-    # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
-    render json: test_result.to_json, status: cwa_server_response.success? ? :ok : cwa_server_response.status
+    test_result
   end
 end
