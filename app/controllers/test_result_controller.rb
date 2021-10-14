@@ -10,10 +10,10 @@ class TestResultController < ApplicationController
          result: test_result[:result]
      }]
     }
-    logger.info test_results
+    logger.info test_results.to_json
 
     logger.info "push to cwa server..."
-    cwa_server_response = CWA_request test_results
+    cwa_server_response = CWA_request test_results.to_json
     logger.info "response: #{cwa_server_response.body}"
 
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
@@ -64,16 +64,16 @@ class TestResultController < ApplicationController
   # TODO: refactor this !!
   def build_json test_result
     if test_result[:anonymous]
-      '{ "timestamp": ' +test_result[:timestamp].to_s+', "salt": "' +test_result[:salt]+'", "hash": "' +test_result[:cwa_test_id]+'" }'
+      '{ "timestamp": ' +test_result[:timestamp].to_s+', "salt": "' +test_result[:salt].upcase+'", "hash": "' +test_result[:cwa_test_id]+'" }'
     else
-      '{ "fn": "' + test_result[:fn]+'", "ln": "' +test_result[:ln]+'", "dob": "' +test_result[:dob]+'", "timestamp": ' +test_result[:timestamp].to_s+', "testid": "' +test_result[:testid]+'", "salt": "' +test_result[:salt]+'", "hash": "' +test_result[:cwa_test_id]+'" }'
+      '{ "fn": "' + test_result[:fn]+'", "ln": "' +test_result[:ln]+'", "dob": "' +test_result[:dob]+'", "timestamp": ' +test_result[:timestamp].to_s+', "testid": "' +test_result[:testid]+'", "salt": "' +test_result[:salt].upcase+'", "hash": "' +test_result[:cwa_test_id]+'" }'
     end
   end
 
   def CWA_request test_results
     #"https://quicktest-result-cff4f7147260.coronawarn.app/"
     # cwa_url = Rails.env.production? ? "https://quicktest-result.coronawarn.app/" : "https://quicktest-result-dfe4f5c711db.coronawarn.app/"
-    cwa_url = ENV["CWA_URL"]
+    cwa_url = ENV["CWA_URL"] + "api/v1/quicktest/results/"
     logger.info "push to cwa server #{cwa_url}..."
 
     client_key = OpenSSL::PKey::RSA.new(File.read(ENV["KEY_PATH"]), ENV["KEY_PASSWORD"])
