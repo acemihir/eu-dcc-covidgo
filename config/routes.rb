@@ -11,4 +11,7 @@ Rails.application.routes.draw do
 
   # POST /test_result
   resources :test_result, only: %i[create]
+
+  # POST /dcc
+  resources :dcc, only: %i[create]
 end
