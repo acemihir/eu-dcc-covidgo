@@ -27,7 +27,7 @@ class DccController < ApplicationController
     }
     logger.info dccs
     cwa_server_response = CWA_request dccs
-    logger.info "response: #{cwa_server_response.body}"
+    logger.info "quicktest results response: #{cwa_server_response.body}"
 
     #3 JSON / DDC-Info from Backend for each recieved Test / Assembled by DCC-Service – GET on [Base-URL des DCC-Servers]/version/v1/publicKey/search/{labId}
     get_pub_keys dcc          # Periodic function 10s
@@ -61,11 +61,11 @@ class DccController < ApplicationController
     logger.info "dataEncryptionKey:#{data_Encryption_Key}"
 
     # Send DCC Data to Proxy
-    # partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
-    # logger.info "partialDCC:#{partial_DCC}"
+    partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
+    logger.info "partialDCC:#{partial_DCC}"
     
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
-    render json: data_Encryption_Key, status: cwa_server_response.success? ? :ok : cwa_server_response.status
+    render json: partial_DCC, status: cwa_server_response.success? ? :ok : cwa_server_response.status
   end
 
   private
@@ -91,8 +91,7 @@ class DccController < ApplicationController
     # take timestamp as utc timestamp or string representation
     logger.info "parse given test-timestamp...#{params}"
     dcc[:timestamp] = dcc[:timestamp].is_a?(String) ? Time.parse(dcc[:timestamp]).to_i : Time.at(dcc[:timestamp]).to_i
-    dcc[:labId] = "mylab01234"  #"covidGo#{DateTime.now.strftime('%Q').to_s(16)}"
-
+    dcc[:labId] = "covidGo#{DateTime.now.strftime('%Q').to_s}"
     dcc
   end
 
@@ -137,6 +136,7 @@ class DccController < ApplicationController
     cwa_server_response = cwa_server_connection.post("api/v1/quicktest/results") do |request|
       request.headers['Content-Type'] = 'application/json'
       request.body = dccs.to_json
+      logger.info "quicktest result request Headers:#{request}"
     end
 
     cwa_server_response
@@ -305,9 +305,10 @@ class DccController < ApplicationController
 
   def encrypt_32_key key_32_bytes 
     # encrypt DEK with Public Key
-    private_key = @pub_keys[:publicKey] 
-    private_key = 'MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAobtfXfsyQOKpeG0derCkCs/3FJjWJJ+DxseXTiFuhGaOCPaqblyclmtiZ+WmN0Ix5O7eEJrKlh43cD3qN8AUGNIQ8W1LAFdu5j3nVpk6g5Call/JPGvF1jBhew7pt8oHZBr6MtNi0L3FG3QRhHFF2IMZaF3pqK4JOf5XSzOdL+OQXiIRqsP0Mm6bC0MuzHSwwYu1+N29yDI7CyazbXtgvmPgSN3yCvvhHu71aXzTRJvj3sHBusOQHssQnd+VY4Q9QqTsJcKOegrxo7i9oePTHDNG895VH4TpSBHn5Q50wDt3ElCnfWbsoO2utlOXWLEUrE0PlX2uqMVu9MJsYtNqcVSWvo9iWF9JssGkOLV8SY0a+h9WWQHtx9+6BdiGRAjwvby7rH4Fouv9aUOQd72sEur5wu5h0ngBHb4oGGlDPFBEm+J877Ol/jvER8Eohq0sRqpqxsFVgmLc0Dwf6qVHRMXkyMFS30A5CJfdJrzXvYab1cGgV/fCkuPrJ78Wi59nAgMBAAE='
-    key = OpenSSL::PKey::RSA.new(Base64.decode64(private_key))
+    private_key = @pub_keys[:publicKey]?Base64.decode64(@pub_keys[:publicKey]):1024
+    # private_key = private_key?private_key:1024
+    # private_key = 'MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAobtfXfsyQOKpeG0derCkCs/3FJjWJJ+DxseXTiFuhGaOCPaqblyclmtiZ+WmN0Ix5O7eEJrKlh43cD3qN8AUGNIQ8W1LAFdu5j3nVpk6g5Call/JPGvF1jBhew7pt8oHZBr6MtNi0L3FG3QRhHFF2IMZaF3pqK4JOf5XSzOdL+OQXiIRqsP0Mm6bC0MuzHSwwYu1+N29yDI7CyazbXtgvmPgSN3yCvvhHu71aXzTRJvj3sHBusOQHssQnd+VY4Q9QqTsJcKOegrxo7i9oePTHDNG895VH4TpSBHn5Q50wDt3ElCnfWbsoO2utlOXWLEUrE0PlX2uqMVu9MJsYtNqcVSWvo9iWF9JssGkOLV8SY0a+h9WWQHtx9+6BdiGRAjwvby7rH4Fouv9aUOQd72sEur5wu5h0ngBHb4oGGlDPFBEm+J877Ol/jvER8Eohq0sRqpqxsFVgmLc0Dwf6qVHRMXkyMFS30A5CJfdJrzXvYab1cGgV/fCkuPrJ78Wi59nAgMBAAE='
+    key = OpenSSL::PKey::RSA.new(private_key)
     label = ''
     md_oaep = OpenSSL::Digest::SHA256
     md_mgf1 = OpenSSL::Digest::SHA256
@@ -319,7 +320,7 @@ class DccController < ApplicationController
 
   def send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
     testId = @pub_keys[:testId]
-    testId = "986adbf41719f9eb5615fa5216b4640a7bff7860cd73f9ed4586eaef53173ad2"
+    # testId = "986adbf41719f9eb5615fa5216b4640a7bff7860cd73f9ed4586eaef53173ad2"
     dcc_json = {
       dccHash: dcc_hash_hex,
       encryptedDcc: encrypted_DCC,
