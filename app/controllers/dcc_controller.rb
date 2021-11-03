@@ -31,7 +31,7 @@ class DccController < ApplicationController
 
     #3 JSON / DDC-Info from Backend for each recieved Test / Assembled by DCC-Service – GET on [Base-URL des DCC-Servers]/version/v1/publicKey/search/{labId}
     get_pub_keys dcc          # Periodic function 10s
-    
+
     #4 JSON / DCC-“Kernel“ / Assembled by Partner SW based on exchanged information
     dcc_data = build_DCC_data dcc
     logger.info "DCC JSON object:#{dcc_data}"
@@ -54,16 +54,19 @@ class DccController < ApplicationController
     logger.info "encrypted DCC:#{encrypted_DCC}"
     encrypted_DCC = Base64.encode64(encrypted_DCC)
     logger.info "encrypted DCC:#{encrypted_DCC}"
-
+    
     # Encrypt 32 byte key using public key from step "Determination of public keys for existing test results"
     data_Encryption_Key = encrypt_32_key key_32_bytes
     data_Encryption_Key = Base64.encode64(data_Encryption_Key)
     logger.info "dataEncryptionKey:#{data_Encryption_Key}"
-
+    
     # Send DCC Data to Proxy
     partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
     logger.info "partialDCC:#{partial_DCC}"
     
+    # Periodically function call
+    periodic_function dcc
+
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
     render json: partial_DCC, status: cwa_server_response.success? ? :ok : cwa_server_response.status
   end
@@ -145,7 +148,7 @@ class DccController < ApplicationController
   def generate_cwa_link dcc, salt=SecureRandom.hex(16)
     # generate 128-bit salt
     logger.info "create secure salt..."
-    dcc[:salt] = salt
+    dcc[:salt] = salt.upcase
     # build the hash (SHA256-Hash)
     logger.info "create CWA SHA256 hash..."
     dcc[:cwa_test_id] = cwa_test_id dcc
@@ -159,44 +162,38 @@ class DccController < ApplicationController
     logger.info dcc[:cwa_base64_object]
 
     # TODO: we need probably to remove the "==" at the end of string
-    dcc[:cwa_link] = "https://s.coronawarn.app?v=1##{dcc[:cwa_base64_object]}"
+    dcc[:cwa_link] = "https://s.coronawarn.app/?v=1##{dcc[:cwa_base64_object]}"
 
     dcc
   end
-
-  def get_pub_keys dcc, delay=10
+  
+  def get_pub_keys dcc
     # to determin public keys for existing test results(periodic function)
-    Thread.new do
-      loop do
-        dcc_url = ENV["DCC_URL"]      # DCC server address
-        logger.info "Determination of public keys from dcc server #{dcc_url}..."
+    dcc_url = ENV["DCC_URL"]      # DCC server address
+    logger.info "Determination of public keys from dcc server #{dcc_url}..."
 
-        client_key = OpenSSL::PKey::RSA.new(File.read(ENV["KEY_PATH"]), ENV["KEY_PASSWORD"])
-        client_cert = OpenSSL::X509::Certificate.new(File.read(ENV["CERT_PATH"]))
-        dcc_server_connection = Faraday.new dcc_url,
-          ssl: {
-            client_key: client_key,
-            client_cert: client_cert
-          } do |c|
-            c.use Faraday::Response::RaiseError
-          end
+    client_key = OpenSSL::PKey::RSA.new(File.read(ENV["KEY_PATH"]), ENV["KEY_PASSWORD"])
+    client_cert = OpenSSL::X509::Certificate.new(File.read(ENV["CERT_PATH"]))
+    dcc_server_connection = Faraday.new dcc_url,
+      ssl: {
+        client_key: client_key,
+        client_cert: client_cert
+      } do |c|
+        c.use Faraday::Response::RaiseError
+      end
+    pub_keys_response = dcc_server_connection.get("version/v1/publicKey/search/#{dcc[:labId]}")
+    logger.info "public keys for current labId response: #{pub_keys_response.body}"
 
-        pub_keys_response = dcc_server_connection.get("version/v1/publicKey/search/#{dcc[:labId]}")
-        logger.info "public keys for current labId response: #{pub_keys_response.body}"
+    data = JSON.parse(pub_keys_response.body)
+    testId = Digest::SHA256.hexdigest dcc[:cwa_test_id]
 
-        data = JSON.parse(pub_keys_response.body)
-        testId = Digest::SHA256.hexdigest dcc[:cwa_test_id]
-
-        data.each do |key|
-          if(testId == key[:testId])
-            @pub_keys = key
-          end
-        end
-
-        logger.info "the public key for current test id: #{@pub_keys}"
-        sleep delay
+    data.each do |key|
+      if(testId == key[:testId])
+        @pub_keys = key
       end
     end
+
+    logger.info "the public key for current test id: #{@pub_keys}"
   end
 
   def build_DCC_data dcc
@@ -358,6 +355,15 @@ class DccController < ApplicationController
   
   def hex_to_bin(s)     # hexToStr
     s.scan(/../).map { |x| x.hex }.pack('c*')
+  end
+
+  def periodic_function dcc, delay=10
+    Thread.new do
+      loop do
+      get_pub_keys dcc
+        sleep delay
+      end
+    end
   end
 
 =begin
