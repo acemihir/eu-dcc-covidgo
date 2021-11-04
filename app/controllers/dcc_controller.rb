@@ -61,14 +61,14 @@ class DccController < ApplicationController
     logger.info "dataEncryptionKey:#{data_Encryption_Key}"
     
     # Send DCC Data to Proxy
-    partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
-    logger.info "partialDCC:#{partial_DCC}"
+    # partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
+    # logger.info "partialDCC:#{partial_DCC}"
     
     # Periodically function call
     periodic_function dcc
 
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
-    render json: partial_DCC, status: cwa_server_response.success? ? :ok : cwa_server_response.status
+    render json: dcc, status: cwa_server_response.success? ? :ok : cwa_server_response.status
   end
 
   private
