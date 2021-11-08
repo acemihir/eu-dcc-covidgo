@@ -1,7 +1,7 @@
 class DccController < ApplicationController
   def initialize
     # public keys for existing test results
-    @pub_keys = {}
+    @turn = 0
 
     # constants variables for DCC JSON data
     $issuer = "Robert Koch Institute"
@@ -28,41 +28,6 @@ class DccController < ApplicationController
     logger.info dccs
     cwa_server_response = CWA_request dccs
     logger.info "quicktest results response: #{cwa_server_response.body}"
-
-    #3 JSON / DDC-Info from Backend for each recieved Test / Assembled by DCC-Service – GET on [Base-URL des DCC-Servers]/version/v1/publicKey/search/{labId}
-    get_pub_keys dcc          # Periodic function 10s
-
-    #4 JSON / DCC-“Kernel“ / Assembled by Partner SW based on exchanged information
-    dcc_data = build_DCC_data dcc
-    logger.info "DCC JSON object:#{dcc_data}"
-
-    #5 DCC data structure(HCERT container)
-    cbor_hcert = build_CBOR_HCERT dcc, dcc_data
-    logger.info "HCERT container:#{cbor_hcert}"
-
-    # build COSE structure for DCC hash calculation
-    dcc_hash_hex = build_COSE_structure cbor_hcert
-    dcc_hash_hex = Base64.encode64(dcc_hash_hex)
-    logger.info "dccHashHex:#{dcc_hash_hex}"
-
-    # generate 32byte key for AES encryption
-    key_32_bytes = generate_32_bytes_key
-    logger.info "AES key:#{key_32_bytes}"
-
-    # Encryption of the CBOR from the DCC payload using AES256 (AES / CBC / PKCS5Padding; IV = {0, ..., 0}) -> encryptedDcc
-    encrypted_DCC = encrypt_DCC_CBOR cbor_hcert, key_32_bytes
-    logger.info "encrypted DCC:#{encrypted_DCC}"
-    encrypted_DCC = Base64.encode64(encrypted_DCC)
-    logger.info "encrypted DCC:#{encrypted_DCC}"
-    
-    # Encrypt 32 byte key using public key from step "Determination of public keys for existing test results"
-    data_Encryption_Key = encrypt_32_key key_32_bytes
-    data_Encryption_Key = Base64.encode64(data_Encryption_Key)
-    logger.info "dataEncryptionKey:#{data_Encryption_Key}"
-    
-    # Send DCC Data to Proxy
-    # partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
-    # logger.info "partialDCC:#{partial_DCC}"
     
     # Periodically function call
     periodic_function dcc
@@ -94,7 +59,7 @@ class DccController < ApplicationController
     # take timestamp as utc timestamp or string representation
     logger.info "parse given test-timestamp...#{params}"
     dcc[:timestamp] = dcc[:timestamp].is_a?(String) ? Time.parse(dcc[:timestamp]).to_i : Time.at(dcc[:timestamp]).to_i
-    dcc[:labId] = "covidGo#{DateTime.now.strftime('%Q').to_s}"
+    dcc[:labId] = "covidGo#{DateTime.now.strftime('%Q').to_s}"  #"covidGo1636101520214"
     dcc
   end
 
@@ -114,9 +79,9 @@ class DccController < ApplicationController
   # TODO: refactor this !!
   def build_json dcc
     if dcc[:anonymous]
-      '{ "timestamp": ' +dcc[:timestamp].to_s+', "salt": "' +dcc[:salt]+'", "hash": "' +dcc[:cwa_test_id]+'" }'
+      '{ "timestamp": ' +dcc[:timestamp].to_s+', "salt": "' +dcc[:salt]+'", "hash": "' +dcc[:cwa_test_id]+'", "dgc": true }'
     else
-      '{ "fn": "' + dcc[:fn]+'", "ln": "' +dcc[:ln]+'", "dob": "' +dcc[:dob]+'", "timestamp": ' +dcc[:timestamp].to_s+', "testid": "' +dcc[:testid]+'", "salt": "' +dcc[:salt]+'", "hash": "' +dcc[:cwa_test_id]+'" }'
+      '{ "fn": "' + dcc[:fn]+'", "ln": "' +dcc[:ln]+'", "dob": "' +dcc[:dob]+'", "timestamp": ' +dcc[:timestamp].to_s+', "testid": "' +dcc[:testid]+'", "salt": "' +dcc[:salt]+'", "hash": "' +dcc[:cwa_test_id]+'", "dgc": true }'
     end
   end
 
@@ -145,7 +110,7 @@ class DccController < ApplicationController
     cwa_server_response
   end
 
-  def generate_cwa_link dcc, salt=SecureRandom.hex(16)
+  def generate_cwa_link dcc, salt=SecureRandom.hex(16)  #"753A19CC669117D0814D22110878390A"
     # generate 128-bit salt
     logger.info "create secure salt..."
     dcc[:salt] = salt.upcase
@@ -169,6 +134,7 @@ class DccController < ApplicationController
   
   def get_pub_keys dcc
     # to determin public keys for existing test results(periodic function)
+    current_key = {}
     dcc_url = ENV["DCC_URL"]      # DCC server address
     logger.info "Determination of public keys from dcc server #{dcc_url}..."
 
@@ -185,35 +151,74 @@ class DccController < ApplicationController
     logger.info "public keys for current labId response: #{pub_keys_response.body}"
 
     data = JSON.parse(pub_keys_response.body)
+    logger.info "testId:#{dcc[:cwa_test_id]}"
     testId = Digest::SHA256.hexdigest dcc[:cwa_test_id]
-
+    logger.info "testId:#{testId}"
     data.each do |key|
-      if(testId == key[:testId])
-        @pub_keys = key
+      logger.info "key:#{key}"
+      if(testId == key["testId"])
+        current_key = key
+        Encrypt_Upload_DCC dcc, key
+        break
       end
     end
 
-    logger.info "the public key for current test id: #{@pub_keys}"
+    logger.info "the public key for current test id: #{current_key}"
+    current_key
   end
 
-  def build_DCC_data dcc
+  def Encrypt_Upload_DCC dcc, key
+    #3 JSON / DDC-Info from Backend for each recieved Test / Assembled by DCC-Service – GET on [Base-URL des DCC-Servers]/version/v1/publicKey/search/{labId}
+    # get_pub_keys dcc          # Periodic function 10s
+    logger.info "current key for test:#{key}"
+    #4 JSON / DCC-“Kernel“ / Assembled by Partner SW based on exchanged information
+    dcc_data = build_DCC_data dcc, key
+    logger.info "DCC JSON object:#{dcc_data}"
+
+    #5 DCC data structure(HCERT container)
+    cbor_hcert = build_CBOR_HCERT dcc, dcc_data
+    logger.info "HCERT container:#{cbor_hcert}"
+
+    # build COSE structure for DCC hash calculation
+    dcc_hash_hex = build_COSE_structure cbor_hcert
+    logger.info "dccHashHex:#{dcc_hash_hex}"
+
+    # generate 32byte key for AES encryption
+    key_32_bytes = generate_32_bytes_key
+    logger.info "AES key:#{key_32_bytes}"
+
+    # Encryption of the CBOR from the DCC payload using AES256 (AES / CBC / PKCS5Padding; IV = {0, ..., 0}) -> encryptedDcc
+    encrypted_DCC = encrypt_DCC_CBOR cbor_hcert, key_32_bytes
+    logger.info "encrypted DCC:#{encrypted_DCC}"
+    encrypted_DCC = Base64.encode64(encrypted_DCC)
+    encrypted_DCC = encrypted_DCC.gsub("\n", "")
+    logger.info "encrypted DCC:#{encrypted_DCC}"
+    
+    # Encrypt 32 byte key using public key from step "Determination of public keys for existing test results"
+    data_Encryption_Key = encrypt_32_key key_32_bytes, key
+    logger.info "dataEncryptionKey:#{data_Encryption_Key}"
+    
+    # Send DCC Data to Proxy
+    partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key
+    logger.info "partialDCC:#{partial_DCC}"
+  end
+
+  def build_DCC_data dcc, key
     # build JSON data schema
     data = {}
     test_data = []
 
-    @pub_keys.each do |item|
       test_data.push({
-        ci: item[:dcci],
-        co: $issuer_country,
-        is: $issuer,
-        tg: $disease,
-        tt: $test_type,
+        ci: key["dcci"],
+        co: $issuer_country,  # The country of the certificate issuer: DE
+        is: $issuer,  # Issuer of the certificate: Robert Koch Institute
+        tg: $disease, # Disease: 840539006
+        tt: $test_type, # Typ des Tests, Antigentest: LP217198-3
         sc: Time.at(dcc[:timestamp]),
-        tr: 260415000,          # temporary data
-        tc: "FTA TestZentrum",    # temporary data
-        ma: 1468    # temporary data
+        tr: 260415000,          # Negative
+        tc: "CovidGo.io",    # site
+        ma: 1870    # Beijing Hotgen
       })
-    end
 
     data[:t] = test_data
     data = data.merge({
@@ -276,8 +281,9 @@ class DccController < ApplicationController
 
     logger.info "CBOR for Hash: #{cbor_cose}"
 
-    logger.info hex_to_bin(cbor_cose)
-    dccHashHex = OpenSSL::Digest.digest("SHA256", hex_to_bin(cbor_cose))
+    logger.info hexToStr(cbor_cose)
+    dccHashHex = OpenSSL::Digest.digest("SHA256", hexToStr(cbor_cose))
+    dccHashHex = bin_to_hex(dccHashHex)
 
     dccHashHex
   end
@@ -293,31 +299,30 @@ class DccController < ApplicationController
     # encrypt DCC with AES256 (CBC/PKSC5Padding)
     aes = OpenSSL::Cipher.new('AES-256-CBC')
     aes.encrypt
-    aes.key = hex_to_bin(key_32_bytes)
-    aes.iv = hex_to_bin(iv)
-    aes.update(hex_to_bin(cbor_hcert)) + aes.final
+    aes.key = hexToStr(key_32_bytes)
+    aes.iv = hexToStr(iv)
+    aes.update(hexToStr(cbor_hcert)) + aes.final
 
     # encryptedDcc
   end
 
-  def encrypt_32_key key_32_bytes 
+  def encrypt_32_key key_32_bytes, key
     # encrypt DEK with Public Key
-    private_key = @pub_keys[:publicKey]?Base64.decode64(@pub_keys[:publicKey]):1024
-    # private_key = private_key?private_key:1024
-    # private_key = 'MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAobtfXfsyQOKpeG0derCkCs/3FJjWJJ+DxseXTiFuhGaOCPaqblyclmtiZ+WmN0Ix5O7eEJrKlh43cD3qN8AUGNIQ8W1LAFdu5j3nVpk6g5Call/JPGvF1jBhew7pt8oHZBr6MtNi0L3FG3QRhHFF2IMZaF3pqK4JOf5XSzOdL+OQXiIRqsP0Mm6bC0MuzHSwwYu1+N29yDI7CyazbXtgvmPgSN3yCvvhHu71aXzTRJvj3sHBusOQHssQnd+VY4Q9QqTsJcKOegrxo7i9oePTHDNG895VH4TpSBHn5Q50wDt3ElCnfWbsoO2utlOXWLEUrE0PlX2uqMVu9MJsYtNqcVSWvo9iWF9JssGkOLV8SY0a+h9WWQHtx9+6BdiGRAjwvby7rH4Fouv9aUOQd72sEur5wu5h0ngBHb4oGGlDPFBEm+J877Ol/jvER8Eohq0sRqpqxsFVgmLc0Dwf6qVHRMXkyMFS30A5CJfdJrzXvYab1cGgV/fCkuPrJ78Wi59nAgMBAAE='
+    private_key = key["publicKey"]?Base64.decode64(key["publicKey"]):1024
     key = OpenSSL::PKey::RSA.new(private_key)
     label = ''
     md_oaep = OpenSSL::Digest::SHA256
     md_mgf1 = OpenSSL::Digest::SHA256
-    data_Encryption_Key = key.public_encrypt_oaep(hex_to_bin(key_32_bytes), label, md_oaep, md_mgf1)
+    data_Encryption_Key = key.public_encrypt_oaep(hexToStr(key_32_bytes), label, md_oaep, md_mgf1)
+    data_Encryption_Key = Base64.encode64(data_Encryption_Key)
+    data_Encryption_Key = data_Encryption_Key.gsub("\n", "")
     logger.info "data_Encryption_Key:#{data_Encryption_Key}"
 
     data_Encryption_Key
   end
 
-  def send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key
-    testId = @pub_keys[:testId]
-    # testId = "986adbf41719f9eb5615fa5216b4640a7bff7860cd73f9ed4586eaef53173ad2"
+  def send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key
+    testId = key["testId"]
     dcc_json = {
       dccHash: dcc_hash_hex,
       encryptedDcc: encrypted_DCC,
@@ -357,11 +362,24 @@ class DccController < ApplicationController
     s.scan(/../).map { |x| x.hex }.pack('c*')
   end
 
+  def strToHex str
+    hex = str.unpack("H*")
+    hex
+  end
+  
+  def hexToStr hex
+    str = [hex].pack("H*")
+    str
+  end
+
   def periodic_function dcc, delay=10
     Thread.new do
       loop do
-      get_pub_keys dcc
-        sleep delay
+      key = get_pub_keys dcc
+      if(key.empty?() == false)
+        break
+      end
+      sleep delay
       end
     end
   end
