@@ -1,7 +1,6 @@
 class DccController < ApplicationController
   def initialize
     # public keys for existing test results
-    @turn = 0
 
     # constants variables for DCC JSON data
     $issuer = "Robert Koch Institute"
@@ -59,7 +58,7 @@ class DccController < ApplicationController
     # take timestamp as utc timestamp or string representation
     logger.info "parse given test-timestamp...#{params}"
     dcc[:timestamp] = dcc[:timestamp].is_a?(String) ? Time.parse(dcc[:timestamp]).to_i : Time.at(dcc[:timestamp]).to_i
-    dcc[:labId] = "covidGo#{DateTime.now.strftime('%Q').to_s}"  #"covidGo1636101520214"
+    dcc[:labId] = "covidGo#{DateTime.now.strftime('%Q').to_s}" #"covidGo1636362950412"
     dcc
   end
 
@@ -110,7 +109,7 @@ class DccController < ApplicationController
     cwa_server_response
   end
 
-  def generate_cwa_link dcc, salt=SecureRandom.hex(16)  #"753A19CC669117D0814D22110878390A"
+  def generate_cwa_link dcc, salt=SecureRandom.hex(16) #"5DBEC5B9B0A2912BFFCA0D8A4C800AD1"
     # generate 128-bit salt
     logger.info "create secure salt..."
     dcc[:salt] = salt.upcase
@@ -163,7 +162,6 @@ class DccController < ApplicationController
       end
     end
 
-    logger.info "the public key for current test id: #{current_key}"
     current_key
   end
 
@@ -207,6 +205,7 @@ class DccController < ApplicationController
     # build JSON data schema
     data = {}
     test_data = []
+    timestamp = Time.at(dcc[:timestamp]).strftime('%FT%TZ')
 
       test_data.push({
         ci: key["dcci"],
@@ -214,10 +213,10 @@ class DccController < ApplicationController
         is: $issuer,  # Issuer of the certificate: Robert Koch Institute
         tg: $disease, # Disease: 840539006
         tt: $test_type, # Typ des Tests, Antigentest: LP217198-3
-        sc: Time.at(dcc[:timestamp]),
-        tr: 260415000,          # Negative
+        sc: "#{timestamp}",
+        tr: "260415000",          # Negative
         tc: "CovidGo.io",    # site
-        ma: 1870    # Beijing Hotgen
+        ma: "1870"    # Beijing Hotgen
       })
 
     data[:t] = test_data
@@ -239,8 +238,8 @@ class DccController < ApplicationController
     # build HCERT container data with JSON schema
     data = {
       1 => "DE",
-      4 => dcc[:timestamp],
-      6 => dcc[:timestamp] + $expiration_dates*60*60*24,
+      4 => dcc[:timestamp] + $expiration_dates*60*60*24,
+      6 => dcc[:timestamp],
       -260 => {
         1 => dcc_data
       }
@@ -308,8 +307,10 @@ class DccController < ApplicationController
 
   def encrypt_32_key key_32_bytes, key
     # encrypt DEK with Public Key
-    private_key = key["publicKey"]?Base64.decode64(key["publicKey"]):1024
-    key = OpenSSL::PKey::RSA.new(private_key)
+    public_key = key["publicKey"]
+    logger.info "publicKey:#{public_key}"
+    key = OpenSSL::PKey::RSA.new(Base64.decode64(public_key))
+    logger.info "publicKey:#{key}"
     label = ''
     md_oaep = OpenSSL::Digest::SHA256
     md_mgf1 = OpenSSL::Digest::SHA256
@@ -350,6 +351,7 @@ class DccController < ApplicationController
       request.body = dcc_json
       logger.info "request:#{request}"
     end
+    dcc_server_response = JSON.parse(dcc_server_response.body)
 
     dcc_server_response
   end
