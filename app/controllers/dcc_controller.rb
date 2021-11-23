@@ -1,7 +1,7 @@
 class DccController < ApplicationController
   def initialize
     # public keys for existing test results
-
+    @device_id = 0
     # constants variables for DCC JSON data
     $issuer = "Robert Koch Institute"
     $version = "1.3.0"
@@ -12,6 +12,8 @@ class DccController < ApplicationController
   end
   # POST /dcc
   def create
+    #0. First get the test kit / device ID from https://distribution.dcc-rules.de/
+    get_deviceID_perday
     #1. JSON / Test Registration / Assembled by Partner SW – QR(base64url) to CWA
     dcc = generate_cwa_link dcc_params
     
@@ -216,7 +218,7 @@ class DccController < ApplicationController
         sc: "#{timestamp}",
         tr: "260415000",          # Negative
         tc: "CovidGo.io",    # site
-        ma: "1870"    # Beijing Hotgen
+        ma: @device_id    # Beijing Hotgen
       })
 
     data[:t] = test_data
@@ -382,6 +384,40 @@ class DccController < ApplicationController
         break
       end
       sleep delay
+      end
+    end
+  end
+
+  def get_deviceID_perday
+    Thread.new do
+      loop do
+        url = "https://distribution.dcc-rules.de/valuesets/";
+        response = Faraday.get url
+        logger.info "valuesets:#{JSON.parse response.body}"
+        valuesets = JSON.parse response.body
+
+        hash = ""
+        valuesets.each do |value|
+          if(value["id"] == "covid-19-lab-test-manufacturer-and-name")
+            hash = value["hash"]
+          end
+        end
+
+        url = url + hash
+        response = Faraday.get url
+        rat_lists = JSON.parse response.body
+        rat_lists = rat_lists["valueSetValues"]
+
+        temp_id = 0
+        rat_lists.each do |key, value|
+          if(value["display"] == "Beijing Hotgen Biotech Co., Ltd, Novel Coronavirus 2019-nCoV Antigen Test (Colloidal Gold)")
+            temp_id = key
+          end
+        end
+        @device_id = temp_id
+        logger.info "device_id: #{@device_id}"
+
+        sleep 86400
       end
     end
   end
