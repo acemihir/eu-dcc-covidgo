@@ -1,5 +1,6 @@
 class DccController < ApplicationController
   def initialize
+    logger.info "CWA service initialized"
     # public keys for existing test results
     @device_id = 0
     # constants variables for DCC JSON data
@@ -18,19 +19,19 @@ class DccController < ApplicationController
     dcc = generate_cwa_link dcc_params
     
     #2. JSON / Test Result / Assembled by Partner SW – POST to DCC-Service 
-    logger.info "build dccs object for cwa-server..."
     dccs = {
       testResults: [{
-         id: dcc[:cwa_test_id],
-         result: dcc[:result]
-     }],
-     labId: dcc[:labId]
-    }
-    logger.info dccs
+        id: dcc[:cwa_test_id],
+        result: dcc[:result]
+        }],
+        labId: dcc[:labId]
+      }
+    logger.info "JSON object for test result request:#{dccs}"
     cwa_server_response = CWA_request dccs
     logger.info "quicktest results response: #{cwa_server_response.body}"
     
     # Periodically function call
+    logger.info "periodic function to get DCC id and public key is initialized:#{cwa_server_response}"
     periodic_function dcc
 
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
@@ -41,26 +42,28 @@ class DccController < ApplicationController
 
   def dcc_params
     dcc = params[:dcc]
-    logger.info "check dcc params...#{dcc}"
+    logger.info "check dcc params:#{dcc}"
     # check & validate params
     # TODO: do we get timestamp in correct format, or should we transform it to "Unix Epoch Timestamp Format (Sekunden)"
     params.require([:timestamp,:result])
 
     # result must be between 5=pending, 6=negative, 7=positive, 8=test invalid
     unless params[:result] >= 5 && params[:result] <= 8
+      logger.error "testresult for the given test must be between: 5=pending, 6=negative, 7=positive, 8=test invalid"
       raise ArgumentError.new("testresult for the given test must be between: 5=pending, 6=negative, 7=positive, 8=test invalid")
     end
     if (params.has_key?(:fn) && params.has_key?(:ln) && params.has_key?(:dob) && params.has_key?(:testid))
       dcc[:anonymous] = false
-      logger.info "parse given birthdate..."
       dcc[:dob] = Date.parse(dcc[:dob]).strftime("%Y-%m-%d")
     else
       dcc[:anonymous] = true
+      logger.warn "anonymous test result requested..."
     end
     # take timestamp as utc timestamp or string representation
-    logger.info "parse given test-timestamp...#{params}"
     dcc[:timestamp] = dcc[:timestamp].is_a?(String) ? Time.parse(dcc[:timestamp]).to_i : Time.at(dcc[:timestamp]).to_i
     dcc[:labId] = "covidGo#{DateTime.now.strftime('%Q').to_s}" #"covidGo1636362950412"
+    logger.info "parsed dcc params:#{dcc}"
+    
     dcc
   end
 
@@ -113,17 +116,17 @@ class DccController < ApplicationController
 
   def generate_cwa_link dcc, salt=SecureRandom.hex(16) #"5DBEC5B9B0A2912BFFCA0D8A4C800AD1"
     # generate 128-bit salt
-    logger.info "create secure salt..."
     dcc[:salt] = salt.upcase
+    logger.debug "Random salt value:#{dcc[:salt]}"
     # build the hash (SHA256-Hash)
-    logger.info "create CWA SHA256 hash..."
     dcc[:cwa_test_id] = cwa_test_id dcc
+    logger.debug "SHA256 hash value cwa-test-id:#{dcc[:cwa_test_id]}"
     # build json object (be carefull regarding spaces, see https://github.com/corona-warn-app/cwa-quicktest-onboarding/issues/11)
-    logger.info "build cwa json object..."
+    # logger.info "build cwa json object..."
     cwa_json = build_json dcc
-    logger.info cwa_json
+    logger.info "CWA JSON object be involved in test result QR code:#{cwa_json}"
     # generate base64 encoded object for building the qr_code
-    logger.info "generate base64 encoded cwa object..."
+    # logger.info "generate base64 encoded cwa object..."
     dcc[:cwa_base64_object] = Base64.urlsafe_encode64(cwa_json)
     logger.info dcc[:cwa_base64_object]
 
@@ -149,39 +152,35 @@ class DccController < ApplicationController
         c.use Faraday::Response::RaiseError
       end
     pub_keys_response = dcc_server_connection.get("version/v1/publicKey/search/#{dcc[:labId]}")
-    logger.info "public keys for current labId response: #{pub_keys_response.body}"
+    # logger.info "public keys for current labId response: #{pub_keys_response.body}"
 
     data = JSON.parse(pub_keys_response.body)
-    logger.info "testId:#{dcc[:cwa_test_id]}"
     testId = Digest::SHA256.hexdigest dcc[:cwa_test_id]
-    logger.info "testId:#{testId}"
     data.each do |key|
-      logger.info "key:#{key}"
       if(testId == key["testId"])
         current_key = key
+        logger.debug  "DCCid and public keys:#{key}"
         Encrypt_Upload_DCC dcc, key
         break
       end
+      logger.warn "This test result is not requested by CWA App!"
     end
 
     current_key
   end
 
   def Encrypt_Upload_DCC dcc, key
-    #3 JSON / DDC-Info from Backend for each recieved Test / Assembled by DCC-Service – GET on [Base-URL des DCC-Servers]/version/v1/publicKey/search/{labId}
-    # get_pub_keys dcc          # Periodic function 10s
-    logger.info "current key for test:#{key}"
     #4 JSON / DCC-“Kernel“ / Assembled by Partner SW based on exchanged information
     dcc_data = build_DCC_data dcc, key
-    logger.info "DCC JSON object:#{dcc_data}"
+    logger.debug "DCC JSON object:#{dcc_data}"
 
     #5 DCC data structure(HCERT container)
     cbor_hcert = build_CBOR_HCERT dcc, dcc_data
-    logger.info "HCERT container:#{cbor_hcert}"
+    logger.debug "HCERT container:#{cbor_hcert}"
 
     # build COSE structure for DCC hash calculation
     dcc_hash_hex = build_COSE_structure cbor_hcert
-    logger.info "dccHashHex:#{dcc_hash_hex}"
+    logger.debug "dccHashHex:#{dcc_hash_hex}"
 
     # generate 32byte key for AES encryption
     key_32_bytes = generate_32_bytes_key
@@ -189,7 +188,6 @@ class DccController < ApplicationController
 
     # Encryption of the CBOR from the DCC payload using AES256 (AES / CBC / PKCS5Padding; IV = {0, ..., 0}) -> encryptedDcc
     encrypted_DCC = encrypt_DCC_CBOR cbor_hcert, key_32_bytes
-    logger.info "encrypted DCC:#{encrypted_DCC}"
     encrypted_DCC = Base64.encode64(encrypted_DCC)
     encrypted_DCC = encrypted_DCC.gsub("\n", "")
     logger.info "encrypted DCC:#{encrypted_DCC}"
@@ -246,14 +244,10 @@ class DccController < ApplicationController
         1 => dcc_data
       }
     }
-    logger.info "before conversion to CBOR object data:#{data}"
 
     encoded_data = data.to_cbor    # to convert CBOR data format
-    logger.info encoded_data
     byte_arr = encoded_data.unpack("C*")
-    logger.info byte_arr
     cbor_hcert = byte_arr.map{ |byte| byte.to_s(16).force_encoding('iso-8859-1').encode('utf-8').upcase.length == 1 ? "0#{byte.to_s(16).force_encoding('iso-8859-1').encode('utf-8').upcase}":byte.to_s(16).force_encoding('iso-8859-1').encode('utf-8').upcase}.join("")
-    logger.info "CBOR:#{cbor_hcert}"
 
     cbor_hcert
   end
@@ -265,7 +259,6 @@ class DccController < ApplicationController
   # Attention: This just an example - has to be adapted if CBOR HEX > 255 Byte (0xFF)!
   def build_COSE_structure cbor_hcert
     cbor_length = (cbor_hcert.length / 2).to_s(16)
-    logger.info "CBOR data length:#{cbor_length}"
     cbor_cose = ""
     case cbor_length.length
     when 1
@@ -280,9 +273,6 @@ class DccController < ApplicationController
       cbor_cose = "Unexpeted Error EXITING - CBOR TOO LONG"
     end
 
-    logger.info "CBOR for Hash: #{cbor_cose}"
-
-    logger.info hexToStr(cbor_cose)
     dccHashHex = OpenSSL::Digest.digest("SHA256", hexToStr(cbor_cose))
     dccHashHex = bin_to_hex(dccHashHex)
 
@@ -310,16 +300,13 @@ class DccController < ApplicationController
   def encrypt_32_key key_32_bytes, key
     # encrypt DEK with Public Key
     public_key = key["publicKey"]
-    logger.info "publicKey:#{public_key}"
     key = OpenSSL::PKey::RSA.new(Base64.decode64(public_key))
-    logger.info "publicKey:#{key}"
     label = ''
     md_oaep = OpenSSL::Digest::SHA256
     md_mgf1 = OpenSSL::Digest::SHA256
     data_Encryption_Key = key.public_encrypt_oaep(hexToStr(key_32_bytes), label, md_oaep, md_mgf1)
     data_Encryption_Key = Base64.encode64(data_Encryption_Key)
     data_Encryption_Key = data_Encryption_Key.gsub("\n", "")
-    logger.info "data_Encryption_Key:#{data_Encryption_Key}"
 
     data_Encryption_Key
   end
@@ -331,12 +318,10 @@ class DccController < ApplicationController
       encryptedDcc: encrypted_DCC,
       dataEncryptionKey: data_Encryption_Key
     }
-    logger.info "dcc_json hash:#{dcc_json}"
     dcc_json = dcc_json.to_json
-    logger.info "dcc_json json:#{dcc_json}"
+    logger.info "JSON object for Uploading request:#{dcc_json}"
 
     dcc_url = ENV["DCC_URL"]
-    logger.info "push to dcc server #{dcc_url}..."
 
     client_key = OpenSSL::PKey::RSA.new(File.read(ENV["KEY_PATH"]), ENV["KEY_PASSWORD"])
     client_cert = OpenSSL::X509::Certificate.new(File.read(ENV["CERT_PATH"]))
@@ -347,13 +332,13 @@ class DccController < ApplicationController
       } do |c|
         c.use Faraday::Response::RaiseError
       end
-      logger.info dcc_json
     dcc_server_response = dcc_server_connection.post("version/v1/test/#{testId}/dcc") do |request|
       request.headers['Content-Type'] = 'application/json'
       request.body = dcc_json
       logger.info "request:#{request}"
     end
     dcc_server_response = JSON.parse(dcc_server_response.body)
+    logger.info "Signature response:#{dcc_server_response}"
 
     dcc_server_response
   end
@@ -376,7 +361,7 @@ class DccController < ApplicationController
     str
   end
 
-  def periodic_function dcc, delay=10
+  def periodic_function dcc, delay=ENV["CWA_POLLING_INTERVAL_SECS"].to_i
     Thread.new do
       loop do
       key = get_pub_keys dcc
@@ -389,11 +374,11 @@ class DccController < ApplicationController
   end
 
   def get_deviceID_perday
+    logger.info "Daily retieving the device_id from https://distribution.dcc-rules.de/valuesets/ - Thread initialized"
     Thread.new do
       loop do
         url = "https://distribution.dcc-rules.de/valuesets/";
         response = Faraday.get url
-        logger.info "valuesets:#{JSON.parse response.body}"
         valuesets = JSON.parse response.body
 
         hash = ""
@@ -415,7 +400,7 @@ class DccController < ApplicationController
           end
         end
         @device_id = temp_id
-        logger.info "device_id: #{@device_id}"
+        logger.debug "device_id: #{@device_id}"
 
         sleep 86400
       end
@@ -453,6 +438,14 @@ def convert_string_ICAO string
     ':'=>'',
     ';'=>'',
     '.'=>'',
+    'ß'=>'SS',
+    'ẞ'=>'SS',
+    'Ä'=>'A',  
+    'Ö'=>'O',
+    'Ü'=>'U',
+    'ä'=>'A',
+    'ö'=>'O',
+    'ü'=>'U',
     'À'=>'A',
     'Á'=>'A',
     'Â'=>'A',
@@ -491,7 +484,6 @@ def convert_string_ICAO string
     'Ċ'=>'C',
     'Č'=>'C',
     'Ď'=>'D',
-    'Ð'=>'D',
     'Ē'=>'E',
     'Ĕ'=>'E',
     'Ė'=>'E',
