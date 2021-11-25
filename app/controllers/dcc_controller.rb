@@ -14,9 +14,9 @@ class DccController < ApplicationController
   # POST /dcc
   def create
     #0. First get the test kit / device ID from https://distribution.dcc-rules.de/
-    get_deviceID_perday
     #1. JSON / Test Registration / Assembled by Partner SW – QR(base64url) to CWA
     dcc = generate_cwa_link dcc_params
+    get_deviceID_perday
     
     #2. JSON / Test Result / Assembled by Partner SW – POST to DCC-Service 
     dccs = {
@@ -32,7 +32,7 @@ class DccController < ApplicationController
     
     # Periodically function call
     logger.info "periodic function to get DCC id and public key is initialized:#{cwa_server_response}"
-    periodic_function dcc
+    initialize_uncomplete_testresult dcc
 
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
     render json: dcc, status: cwa_server_response.success? ? :ok : cwa_server_response.status
@@ -41,7 +41,10 @@ class DccController < ApplicationController
   private
 
   def dcc_params
-    dcc = params[:dcc]
+    dcc = params
+    dcc.delete("dcc")
+    dcc.delete("controller")
+    dcc.delete("action")
     logger.info "check dcc params:#{dcc}"
     # check & validate params
     # TODO: do we get timestamp in correct format, or should we transform it to "Unix Epoch Timestamp Format (Sekunden)"
@@ -151,11 +154,10 @@ class DccController < ApplicationController
       } do |c|
         c.use Faraday::Response::RaiseError
       end
-    pub_keys_response = dcc_server_connection.get("version/v1/publicKey/search/#{dcc[:labId]}")
-    # logger.info "public keys for current labId response: #{pub_keys_response.body}"
+    pub_keys_response = dcc_server_connection.get("version/v1/publicKey/search/#{dcc["labId"]}")
 
     data = JSON.parse(pub_keys_response.body)
-    testId = Digest::SHA256.hexdigest dcc[:cwa_test_id]
+    testId = Digest::SHA256.hexdigest dcc["cwa_test_id"]
     data.each do |key|
       if(testId == key["testId"])
         current_key = key
@@ -198,14 +200,17 @@ class DccController < ApplicationController
     
     # Send DCC Data to Proxy
     partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key
+    test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
+    test_result.update(success_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), status: "initialized", active: "1")
     logger.info "partialDCC:#{partial_DCC}"
+    
   end
 
   def build_DCC_data dcc, key
     # build JSON data schema
     data = {}
     test_data = []
-    timestamp = Time.at(dcc[:timestamp]).strftime('%FT%TZ')
+    timestamp = Time.at(dcc["timestamp"]).strftime('%FT%TZ')
 
       test_data.push({
         ci: key["dcci"],
@@ -221,12 +226,12 @@ class DccController < ApplicationController
 
     data[:t] = test_data
     data = data.merge({
-      dob: dcc[:dob],
+      dob: dcc["dob"],
       nam: {
-        fn: dcc[:ln],
-        fnt: convert_string_ICAO(dcc[:ln].force_encoding('iso-8859-1').encode('utf-8').upcase),
-        gn: dcc[:fn],
-        gnt: convert_string_ICAO(dcc[:fn].force_encoding('iso-8859-1').encode('utf-8').upcase)
+        fn: dcc["ln"],
+        fnt: convert_string_ICAO(dcc["ln"].force_encoding('iso-8859-1').encode('utf-8').upcase),
+        gn: dcc["fn"],
+        gnt: convert_string_ICAO(dcc["fn"].force_encoding('iso-8859-1').encode('utf-8').upcase)
       },
       ver: $version
     })
@@ -238,8 +243,8 @@ class DccController < ApplicationController
     # build HCERT container data with JSON schema
     data = {
       1 => "DE",
-      4 => dcc[:timestamp] + $expiration_dates*60*60*24,
-      6 => dcc[:timestamp],
+      4 => dcc["timestamp"] + $expiration_dates*60*60*24,
+      6 => dcc["timestamp"],
       -260 => {
         1 => dcc_data
       }
@@ -364,6 +369,9 @@ class DccController < ApplicationController
   def periodic_function dcc, delay=ENV["CWA_POLLING_INTERVAL_SECS"].to_i
     Thread.new do
       loop do
+      test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
+      test_result.update(last_polling_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"))
+      
       key = get_pub_keys dcc
       if(key.empty?() == false)
         break
@@ -404,6 +412,15 @@ class DccController < ApplicationController
 
         sleep 86400
       end
+    end
+  end
+
+  def initialize_uncomplete_testresult dcc
+    Dcc.create(test_id: dcc["cwa_test_id"], start_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), dcc: dcc.to_json)
+
+    uncomplete_test_results = Dcc.where(active: '0')
+    uncomplete_test_results.each do |test_result|
+      periodic_function JSON.parse(test_result["dcc"])
     end
   end
 
