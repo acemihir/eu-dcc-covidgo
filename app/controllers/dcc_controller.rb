@@ -72,6 +72,28 @@ class DccController < ApplicationController
     dcc
   end
 
+  def generate_cwa_link dcc, salt=SecureRandom.hex(16) #"5DBEC5B9B0A2912BFFCA0D8A4C800AD1"
+    # generate 128-bit salt
+    dcc[:salt] = salt.upcase
+    logger.info "Random salt value:#{dcc[:salt]}"
+    # build the hash (SHA256-Hash)
+    dcc[:cwa_test_id] = cwa_test_id dcc
+    logger.info "SHA256 hash value cwa-test-id:#{dcc[:cwa_test_id]}"
+    # build json object (be carefull regarding spaces, see https://github.com/corona-warn-app/cwa-quicktest-onboarding/issues/11)
+    # logger.info "build cwa json object..."
+    cwa_json = build_json dcc
+    logger.info "CWA JSON object be involved in test result QR code:#{cwa_json}"
+    # generate base64 encoded object for building the qr_code
+    # logger.info "generate base64 encoded cwa object..."
+    dcc[:cwa_base64_object] = Base64.urlsafe_encode64(cwa_json)
+    logger.info dcc[:cwa_base64_object]
+
+    # TODO: we need probably to remove the "==" at the end of string
+    dcc[:cwa_link] = "https://s.coronawarn.app/?v=1##{dcc[:cwa_base64_object]}"
+
+    dcc
+  end
+
   # cwa_test_id also named SHA256-Hash or hash
   # SHA256-Hash: [dob]#[fn]#[ln]#[timestamp]#[testid]#[salt]
   def cwa_test_id dcc
@@ -118,27 +140,29 @@ class DccController < ApplicationController
 
     cwa_server_response
   end
+  
+  def initialize_uncomplete_testresult dcc
+    Dcc.create(test_id: dcc["cwa_test_id"], start_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), dcc: dcc.to_json)
 
-  def generate_cwa_link dcc, salt=SecureRandom.hex(16) #"5DBEC5B9B0A2912BFFCA0D8A4C800AD1"
-    # generate 128-bit salt
-    dcc[:salt] = salt.upcase
-    logger.info "Random salt value:#{dcc[:salt]}"
-    # build the hash (SHA256-Hash)
-    dcc[:cwa_test_id] = cwa_test_id dcc
-    logger.info "SHA256 hash value cwa-test-id:#{dcc[:cwa_test_id]}"
-    # build json object (be carefull regarding spaces, see https://github.com/corona-warn-app/cwa-quicktest-onboarding/issues/11)
-    # logger.info "build cwa json object..."
-    cwa_json = build_json dcc
-    logger.info "CWA JSON object be involved in test result QR code:#{cwa_json}"
-    # generate base64 encoded object for building the qr_code
-    # logger.info "generate base64 encoded cwa object..."
-    dcc[:cwa_base64_object] = Base64.urlsafe_encode64(cwa_json)
-    logger.info dcc[:cwa_base64_object]
-
-    # TODO: we need probably to remove the "==" at the end of string
-    dcc[:cwa_link] = "https://s.coronawarn.app/?v=1##{dcc[:cwa_base64_object]}"
-
-    dcc
+    uncomplete_test_results = Dcc.where(active: '0')
+    uncomplete_test_results.each do |test_result|
+      periodic_function JSON.parse(test_result["dcc"])
+    end
+  end
+  
+  def periodic_function dcc, delay=ENV["CWA_POLLING_INTERVAL_SECS"].to_i
+    Thread.new do
+      loop do
+      test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
+      test_result.update(last_polling_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"))
+      
+      key = get_pub_keys dcc
+      if(key.empty?() == false)
+        break
+      end
+      sleep delay
+      end
+    end
   end
   
   def get_pub_keys dcc
@@ -374,21 +398,6 @@ class DccController < ApplicationController
     str
   end
 
-  def periodic_function dcc, delay=ENV["CWA_POLLING_INTERVAL_SECS"].to_i
-    Thread.new do
-      loop do
-      test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
-      test_result.update(last_polling_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"))
-      
-      key = get_pub_keys dcc
-      if(key.empty?() == false)
-        break
-      end
-      sleep delay
-      end
-    end
-  end
-
   def get_deviceID_perday
     logger.info "Daily retieving the device_id from https://distribution.dcc-rules.de/valuesets/ - Thread initialized"
     Thread.new do
@@ -420,15 +429,6 @@ class DccController < ApplicationController
 
         sleep 86400
       end
-    end
-  end
-
-  def initialize_uncomplete_testresult dcc
-    Dcc.create(test_id: dcc["cwa_test_id"], start_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), dcc: dcc.to_json)
-
-    uncomplete_test_results = Dcc.where(active: '0')
-    uncomplete_test_results.each do |test_result|
-      periodic_function JSON.parse(test_result["dcc"])
     end
   end
 
