@@ -45,6 +45,8 @@ class DccController < ApplicationController
     dcc.delete("dcc")
     dcc.delete("controller")
     dcc.delete("action")
+    logger.info convert_string_ICAO(dcc["fn"].upcase)
+    logger.info convert_string_ICAO(dcc["ln"].upcase)
     logger.info "check dcc params:#{dcc}"
     # check & validate params
     # TODO: do we get timestamp in correct format, or should we transform it to "Unix Epoch Timestamp Format (Sekunden)"
@@ -229,9 +231,9 @@ class DccController < ApplicationController
       dob: dcc["dob"],
       nam: {
         fn: dcc["ln"],
-        fnt: convert_string_ICAO(dcc["ln"].force_encoding('iso-8859-1').encode('utf-8').upcase),
+        fnt: convert_string_ICAO(dcc["ln"].upcase),
         gn: dcc["fn"],
-        gnt: convert_string_ICAO(dcc["fn"].force_encoding('iso-8859-1').encode('utf-8').upcase)
+        gnt: convert_string_ICAO(dcc["fn"].upcase)
       },
       ver: $version
     })
