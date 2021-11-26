@@ -120,10 +120,10 @@ class DccController < ApplicationController
   def generate_cwa_link dcc, salt=SecureRandom.hex(16) #"5DBEC5B9B0A2912BFFCA0D8A4C800AD1"
     # generate 128-bit salt
     dcc[:salt] = salt.upcase
-    logger.debug "Random salt value:#{dcc[:salt]}"
+    logger.info "Random salt value:#{dcc[:salt]}"
     # build the hash (SHA256-Hash)
     dcc[:cwa_test_id] = cwa_test_id dcc
-    logger.debug "SHA256 hash value cwa-test-id:#{dcc[:cwa_test_id]}"
+    logger.info "SHA256 hash value cwa-test-id:#{dcc[:cwa_test_id]}"
     # build json object (be carefull regarding spaces, see https://github.com/corona-warn-app/cwa-quicktest-onboarding/issues/11)
     # logger.info "build cwa json object..."
     cwa_json = build_json dcc
@@ -161,7 +161,7 @@ class DccController < ApplicationController
     data.each do |key|
       if(testId == key["testId"])
         current_key = key
-        logger.debug  "DCCid and public keys:#{key}"
+        logger.info  "DCCid and public keys:#{key}"
         Encrypt_Upload_DCC dcc, key
         break
       end
@@ -174,15 +174,15 @@ class DccController < ApplicationController
   def Encrypt_Upload_DCC dcc, key
     #4 JSON / DCC-“Kernel“ / Assembled by Partner SW based on exchanged information
     dcc_data = build_DCC_data dcc, key
-    logger.debug "DCC JSON object:#{dcc_data}"
+    logger.info "DCC JSON object:#{dcc_data}"
 
     #5 DCC data structure(HCERT container)
     cbor_hcert = build_CBOR_HCERT dcc, dcc_data
-    logger.debug "HCERT container:#{cbor_hcert}"
+    logger.info "HCERT container:#{cbor_hcert}"
 
     # build COSE structure for DCC hash calculation
     dcc_hash_hex = build_COSE_structure cbor_hcert
-    logger.debug "dccHashHex:#{dcc_hash_hex}"
+    logger.info "dccHashHex:#{dcc_hash_hex}"
 
     # generate 32byte key for AES encryption
     key_32_bytes = generate_32_bytes_key
@@ -408,7 +408,7 @@ class DccController < ApplicationController
           end
         end
         @device_id = temp_id
-        logger.debug "device_id: #{@device_id}"
+        logger.info "device_id: #{@device_id}"
 
         sleep 86400
       end
