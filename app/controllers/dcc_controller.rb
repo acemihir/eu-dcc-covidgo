@@ -162,6 +162,8 @@ class DccController < ApplicationController
     testId = Digest::SHA256.hexdigest dcc["cwa_test_id"]
     data.each do |key|
       if(testId == key["testId"])
+        test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
+        test_result.update(status: "polled", active: "1")
         current_key = key
         logger.info  "DCCid and public keys:#{key}"
         Encrypt_Upload_DCC dcc, key
@@ -202,8 +204,6 @@ class DccController < ApplicationController
     
     # Send DCC Data to Proxy
     partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key
-    test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
-    test_result.update(success_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), status: "initialized", active: "1")
     logger.info "partialDCC:#{partial_DCC}"
     
   end
@@ -344,6 +344,12 @@ class DccController < ApplicationController
       request.body = dcc_json
       logger.info "request:#{request}"
     end
+
+    if(dcc_server_response.success)
+      test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
+      test_result.update(success_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), status: "success", active: "1")
+    end
+
     dcc_server_response = JSON.parse(dcc_server_response.body)
     logger.info "Signature response:#{dcc_server_response}"
 
