@@ -32,10 +32,18 @@ class DccController < ApplicationController
     
     # Periodically function call
     logger.info "periodic function to get DCC id and public key is initialized:#{cwa_server_response}"
-    initialize_uncomplete_testresult dcc
+    register_current_test dcc
 
     # cwa server returns 204 - no content if it succeeds, as we want to return the data we transform it to 200 - OK
     render json: dcc, status: cwa_server_response.success? ? :ok : cwa_server_response.status
+  end
+
+  def initialize_uncomplete_testresult
+    uncomplete_test_results = Dcc.where(active: '0')
+    uncomplete_test_results.each do |test_result|
+      logger.info "A test result polling has started. id:#{test_result["id"]}"
+      periodic_function JSON.parse(test_result["dcc"])
+    end
   end
 
   private
@@ -141,15 +149,12 @@ class DccController < ApplicationController
     cwa_server_response
   end
   
-  def initialize_uncomplete_testresult dcc
-    Dcc.create(test_id: dcc["cwa_test_id"], start_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), dcc: dcc.to_json)
+  def register_current_test dcc
+    Dcc.create(test_id: dcc["cwa_test_id"],result_id: dcc["testid"], start_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), dcc: dcc.to_json)
 
-    uncomplete_test_results = Dcc.where(active: '0')
-    uncomplete_test_results.each do |test_result|
-      periodic_function JSON.parse(test_result["dcc"])
-    end
+    periodic_function dcc
   end
-  
+
   def periodic_function dcc, delay=ENV["CWA_POLLING_INTERVAL_SECS"].to_i
     Thread.new do
       loop do
@@ -187,7 +192,8 @@ class DccController < ApplicationController
     data.each do |key|
       if(testId == key["testId"])
         test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
-        test_result.update(status: "polled", active: "1")
+        test_result.update(status: "polled",polled_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), active: "1")
+        logger.info "A test result was polled. id:#{test_result["id"]}"
         current_key = key
         logger.info  "DCCid and public keys:#{key}"
         Encrypt_Upload_DCC dcc, key
@@ -372,6 +378,7 @@ class DccController < ApplicationController
     if(dcc_server_response.success)
       test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
       test_result.update(success_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), status: "success", active: "1")
+      logger.info "A test result was successfully uploaded. id:#{test_result["id"]}"
     end
 
     dcc_server_response = JSON.parse(dcc_server_response.body)
