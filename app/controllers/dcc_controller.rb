@@ -233,7 +233,7 @@ class DccController < ApplicationController
     logger.info "dataEncryptionKey:#{data_Encryption_Key}"
     
     # Send DCC Data to Proxy
-    partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key
+    partial_DCC = send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key, dcc
     logger.info "partialDCC:#{partial_DCC}"
     
   end
@@ -348,7 +348,7 @@ class DccController < ApplicationController
     data_Encryption_Key
   end
 
-  def send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key
+  def send_DCC_data dcc_hash_hex, encrypted_DCC, data_Encryption_Key, key, dcc
     testId = key["testId"]
     dcc_json = {
       dccHash: dcc_hash_hex,
@@ -375,7 +375,7 @@ class DccController < ApplicationController
       logger.info "request:#{request}"
     end
 
-    if(dcc_server_response.success)
+    if(dcc_server_response.success?)
       test_result = Dcc.find_by(test_id: dcc["cwa_test_id"])
       test_result.update(success_time: Time.now.strftime("%Y-%m-%d %H:%M:%S"), status: "success", active: "1")
       logger.info "A test result was successfully uploaded. id:#{test_result["id"]}"
