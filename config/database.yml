@@ -6,7 +6,7 @@
 #
 default: &default
   adapter: mysql2
-  pool: 5
+  pool: 20
   host: <%= ENV['MYSQL_HOST'] || 'localhost' %>
   port: <%= ENV['MYSQL_PORT'] || '3306' %>
   username: <%= ENV['MYSQL_USERNAME'] || 'root' %>

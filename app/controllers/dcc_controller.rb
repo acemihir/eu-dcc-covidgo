@@ -93,11 +93,11 @@ class DccController < ApplicationController
     logger.info "CWA JSON object be involved in test result QR code:#{cwa_json}"
     # generate base64 encoded object for building the qr_code
     # logger.info "generate base64 encoded cwa object..."
-    dcc[:cwa_base64_object] = Base64.urlsafe_encode64(cwa_json)
-    logger.info dcc[:cwa_base64_object]
+    dcc[:cwa_base45_object] = Base45.encode(cwa_json)
+    logger.info dcc[:cwa_base45_object]
 
     # TODO: we need probably to remove the "==" at the end of string
-    dcc[:cwa_link] = "https://s.coronawarn.app/?v=1##{dcc[:cwa_base64_object]}"
+    dcc[:cwa_link] = "https://s.coronawarn.app/?v=1##{dcc[:cwa_base45_object]}"
 
     dcc
   end
